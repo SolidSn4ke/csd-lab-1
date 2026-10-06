@@ -1,0 +1,2 @@
+../Drivers/MyDriver/Src/mydriver.c:5:5:check_pin	16	static
+../Drivers/MyDriver/Src/mydriver.c:9:6:switch_light	16	static
