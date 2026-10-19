@@ -22,8 +22,6 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-#include "stdio.h"
-
 #include "../../Drivers/MyDriver/Inc/mydriver.h"
 /* USER CODE END Includes */
 
@@ -55,7 +53,125 @@ void SystemClock_Config(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-extern void initialise_monitor_handles(void);
+
+#define RED_MS          12000U
+#define GREEN_MS        (RED_MS / 4U)
+#define SHORT_RED_MS    (RED_MS / 4U)
+
+#define GREEN_BLINK_MS  3000U
+#define BLINK_HALF_MS   500U
+#define YELLOW_MS       2000U
+
+typedef enum
+{
+    STATE_RED,
+    STATE_GREEN,
+    STATE_GREEN_BLINK,
+    STATE_YELLOW
+} TrafficState;
+
+static TrafficState traffic_state;
+static uint32_t state_started;
+static uint32_t red_duration;
+
+static int green_requested = 0;
+static int previous_button = 0;
+
+static void traffic_enter(TrafficState next, uint32_t now)
+{
+    traffic_state = next;
+    state_started = now;
+
+    turn_off_light(RED);
+    turn_off_light(GREEN);
+    turn_off_light(YELLOW);
+
+    switch (next)
+    {
+    case STATE_RED:
+        red_duration = green_requested ? SHORT_RED_MS : RED_MS;
+
+        /* Запрос действует только на этот красный. */
+        green_requested = 0;
+        turn_on_light(RED);
+        break;
+
+    case STATE_GREEN:
+    case STATE_GREEN_BLINK:
+        turn_on_light(GREEN);
+        break;
+
+    case STATE_YELLOW:
+        turn_on_light(YELLOW);
+        break;
+    }
+}
+
+static void traffic_update(uint32_t now, int press_event)
+{
+    uint32_t elapsed = (uint32_t)(now - state_started);
+
+    if (press_event)
+    {
+        if (traffic_state == STATE_GREEN_BLINK ||
+            traffic_state == STATE_YELLOW)
+        {
+            green_requested = 1;
+        }
+        else if (traffic_state == STATE_RED)
+        {
+            if (elapsed < red_duration &&
+                red_duration - elapsed > SHORT_RED_MS)
+            {
+                /*
+                 * Оставляем 3 секунды от момента нажатия.
+                 * Повторное нажатие не продлевает красный.
+                 */
+                red_duration = elapsed + SHORT_RED_MS;
+            }
+        }
+    }
+
+    switch (traffic_state)
+    {
+    case STATE_RED:
+        if (elapsed >= red_duration)
+        {
+            traffic_enter(STATE_GREEN, now);
+        }
+        break;
+
+    case STATE_GREEN:
+        if (elapsed >= GREEN_MS)
+        {
+            traffic_enter(STATE_GREEN_BLINK, now);
+        }
+        break;
+
+    case STATE_GREEN_BLINK:
+        if (elapsed >= GREEN_BLINK_MS)
+        {
+            traffic_enter(STATE_YELLOW, now);
+        }
+        else if ((elapsed / BLINK_HALF_MS) % 2U == 0U)
+        {
+            turn_on_light(GREEN);
+        }
+        else
+        {
+            turn_off_light(GREEN);
+        }
+        break;
+
+    case STATE_YELLOW:
+        if (elapsed >= YELLOW_MS)
+        {
+            traffic_enter(STATE_RED, now);
+        }
+        break;
+    }
+}
+
 /* USER CODE END 0 */
 
 /**
@@ -65,7 +181,7 @@ extern void initialise_monitor_handles(void);
 int main(void)
 {
   /* USER CODE BEGIN 1 */
-  initialise_monitor_handles();
+
   /* USER CODE END 1 */
 
   /* MCU Configuration--------------------------------------------------------*/
@@ -87,21 +203,21 @@ int main(void)
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
   /* USER CODE BEGIN 2 */
-
+  traffic_enter(STATE_RED, HAL_GetTick());
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-    HAL_Delay(1000);
-    while (!HAL_GPIO_ReadPin(GPIOC, GPIO_PIN_15))
-    {
-      HAL_Delay(1000);
-      switch_light(RED);
-    }
-    printf("Button is pressed");
-    switch_light(GREEN);
+    uint32_t now = HAL_GetTick();
+
+    int button = check_button(now);
+    int press_event = button && !previous_button;
+
+    previous_button = button;
+
+    traffic_update(now, press_event);
 
     /* USER CODE END WHILE */
 
