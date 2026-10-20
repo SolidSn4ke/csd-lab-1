@@ -1,5 +1,5 @@
-../Core/Src/main.c:80:13:traffic_enter	16	static
-../Core/Src/main.c:110:13:traffic_update	24	static
-../Core/Src/main.c:181:5:main	24	static
-../Core/Src/main.c:233:6:SystemClock_Config	88	static
-../Core/Src/main.c:277:6:Error_Handler	4	static,ignoring_inline_asm
+../Core/Src/main.c:81:13:traffic_enter	16	static
+../Core/Src/main.c:111:13:traffic_update	24	static
+../Core/Src/main.c:182:5:main	24	static
+../Core/Src/main.c:234:6:SystemClock_Config	88	static
+../Core/Src/main.c:278:6:Error_Handler	4	static,ignoring_inline_asm

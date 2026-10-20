@@ -23,6 +23,7 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "../../Drivers/MyDriver/Inc/mydriver.h"
+
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -54,20 +55,20 @@ void SystemClock_Config(void);
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 
-#define RED_MS          12000U
-#define GREEN_MS        (RED_MS / 4U)
-#define SHORT_RED_MS    (RED_MS / 4U)
+#define RED_MS 12000U
+#define GREEN_MS (RED_MS / 4U)
+#define SHORT_RED_MS (RED_MS / 4U)
 
-#define GREEN_BLINK_MS  3000U
-#define BLINK_HALF_MS   500U
-#define YELLOW_MS       2000U
+#define GREEN_BLINK_MS 3000U
+#define BLINK_HALF_MS 500U
+#define YELLOW_MS 2000U
 
 typedef enum
 {
-    STATE_RED,
-    STATE_GREEN,
-    STATE_GREEN_BLINK,
-    STATE_YELLOW
+  STATE_RED,
+  STATE_GREEN,
+  STATE_GREEN_BLINK,
+  STATE_YELLOW
 } TrafficState;
 
 static TrafficState traffic_state;
@@ -79,97 +80,97 @@ static int previous_button = 0;
 
 static void traffic_enter(TrafficState next, uint32_t now)
 {
-    traffic_state = next;
-    state_started = now;
+  traffic_state = next;
+  state_started = now;
 
-    turn_off_light(RED);
-    turn_off_light(GREEN);
-    turn_off_light(YELLOW);
+  turn_off_light(RED);
+  turn_off_light(GREEN);
+  turn_off_light(YELLOW);
 
-    switch (next)
-    {
-    case STATE_RED:
-        red_duration = green_requested ? SHORT_RED_MS : RED_MS;
+  switch (next)
+  {
+  case STATE_RED:
+    red_duration = green_requested ? SHORT_RED_MS : RED_MS;
 
-        /* Запрос действует только на этот красный. */
-        green_requested = 0;
-        turn_on_light(RED);
-        break;
+    /* Запрос действует только на этот красный. */
+    green_requested = 0;
+    turn_on_light(RED);
+    break;
 
-    case STATE_GREEN:
-    case STATE_GREEN_BLINK:
-        turn_on_light(GREEN);
-        break;
+  case STATE_GREEN:
+  case STATE_GREEN_BLINK:
+    turn_on_light(GREEN);
+    break;
 
-    case STATE_YELLOW:
-        turn_on_light(YELLOW);
-        break;
-    }
+  case STATE_YELLOW:
+    turn_on_light(YELLOW);
+    break;
+  }
 }
 
 static void traffic_update(uint32_t now, int press_event)
 {
-    uint32_t elapsed = (uint32_t)(now - state_started);
+  uint32_t elapsed = (uint32_t)(now - state_started);
 
-    if (press_event)
+  if (press_event)
+  {
+    if (traffic_state == STATE_GREEN_BLINK ||
+        traffic_state == STATE_YELLOW)
     {
-        if (traffic_state == STATE_GREEN_BLINK ||
-            traffic_state == STATE_YELLOW)
-        {
-            green_requested = 1;
-        }
-        else if (traffic_state == STATE_RED)
-        {
-            if (elapsed < red_duration &&
-                red_duration - elapsed > SHORT_RED_MS)
-            {
-                /*
-                 * Оставляем 3 секунды от момента нажатия.
-                 * Повторное нажатие не продлевает красный.
-                 */
-                red_duration = elapsed + SHORT_RED_MS;
-            }
-        }
+      green_requested = 1;
     }
-
-    switch (traffic_state)
+    else if (traffic_state == STATE_RED)
     {
-    case STATE_RED:
-        if (elapsed >= red_duration)
-        {
-            traffic_enter(STATE_GREEN, now);
-        }
-        break;
-
-    case STATE_GREEN:
-        if (elapsed >= GREEN_MS)
-        {
-            traffic_enter(STATE_GREEN_BLINK, now);
-        }
-        break;
-
-    case STATE_GREEN_BLINK:
-        if (elapsed >= GREEN_BLINK_MS)
-        {
-            traffic_enter(STATE_YELLOW, now);
-        }
-        else if ((elapsed / BLINK_HALF_MS) % 2U == 0U)
-        {
-            turn_on_light(GREEN);
-        }
-        else
-        {
-            turn_off_light(GREEN);
-        }
-        break;
-
-    case STATE_YELLOW:
-        if (elapsed >= YELLOW_MS)
-        {
-            traffic_enter(STATE_RED, now);
-        }
-        break;
+      if (elapsed < red_duration &&
+          red_duration - elapsed > SHORT_RED_MS)
+      {
+        /*
+         * Оставляем 3 секунды от момента нажатия.
+         * Повторное нажатие не продлевает красный.
+         */
+        red_duration = elapsed + SHORT_RED_MS;
+      }
     }
+  }
+
+  switch (traffic_state)
+  {
+  case STATE_RED:
+    if (elapsed >= red_duration)
+    {
+      traffic_enter(STATE_GREEN, now);
+    }
+    break;
+
+  case STATE_GREEN:
+    if (elapsed >= GREEN_MS)
+    {
+      traffic_enter(STATE_GREEN_BLINK, now);
+    }
+    break;
+
+  case STATE_GREEN_BLINK:
+    if (elapsed >= GREEN_BLINK_MS)
+    {
+      traffic_enter(STATE_YELLOW, now);
+    }
+    else if ((elapsed / BLINK_HALF_MS) % 2U == 0U)
+    {
+      turn_on_light(GREEN);
+    }
+    else
+    {
+      turn_off_light(GREEN);
+    }
+    break;
+
+  case STATE_YELLOW:
+    if (elapsed >= YELLOW_MS)
+    {
+      traffic_enter(STATE_RED, now);
+    }
+    break;
+  }
 }
 
 /* USER CODE END 0 */

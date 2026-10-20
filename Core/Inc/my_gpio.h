@@ -3,7 +3,8 @@
 
 #include "stm32f4xx.h"
 
-typedef struct {
+typedef struct
+{
   uint16_t PinMask;
   uint32_t Mode;
   uint32_t OType;
@@ -21,10 +22,12 @@ void My_GPIO_GetConfig(GPIO_TypeDef *GPIOx, uint16_t Pin,
 uint16_t My_GPIO_ReadPin(GPIO_TypeDef *GPIOx, uint16_t PinMask);
 uint16_t My_GPIO_ReadPort(GPIO_TypeDef *GPIOx);
 
+/*
+ * PinMask selects the pins to change. StateMask contains their output values:
+ * selected bits set in StateMask are driven high, selected bits cleared are
+ * driven low. Other pins are unchanged. StateMask is not GPIO_PIN_SET/RESET.
+ */
 void My_GPIO_WritePins(GPIO_TypeDef *GPIOx, uint16_t PinMask,
                        uint16_t StateMask);
-void My_GPIO_TogglePins(GPIO_TypeDef *GPIOx, uint16_t PinMask);
 
-void My_GPIO_WritePins(GPIO_TypeDef *GPIOx, uint16_t PinMask,
-                       uint16_t StateMask);
 #endif

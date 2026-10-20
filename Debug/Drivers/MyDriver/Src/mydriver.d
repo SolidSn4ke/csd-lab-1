@@ -24,7 +24,8 @@ Drivers/MyDriver/Src/mydriver.o: ../Drivers/MyDriver/Src/mydriver.c \
  ../Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal_flash_ex.h \
  ../Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal_flash_ramfunc.h \
  ../Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal_pwr.h \
- ../Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal_pwr_ex.h
+ ../Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal_pwr_ex.h \
+ ../Core/Inc/my_gpio.h
 ../Drivers/MyDriver/Src/../Inc/mydriver.h:
 ../Core/Inc/gpio.h:
 ../Core/Inc/main.h:
@@ -53,3 +54,4 @@ Drivers/MyDriver/Src/mydriver.o: ../Drivers/MyDriver/Src/mydriver.c \
 ../Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal_flash_ramfunc.h:
 ../Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal_pwr.h:
 ../Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal_pwr_ex.h:
+../Core/Inc/my_gpio.h:

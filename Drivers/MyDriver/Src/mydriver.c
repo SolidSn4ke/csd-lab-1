@@ -1,5 +1,6 @@
 #include "../Inc/mydriver.h"
 #include "gpio.h"
+#include "my_gpio.h"
 
 #define BUTTON_DEBOUNCE_MS 30U
 
@@ -27,7 +28,7 @@ void turn_on_light(Lights color)
 
     if (pin != 0U)
     {
-        HAL_GPIO_WritePin(GPIOD, pin, GPIO_PIN_SET);
+        My_GPIO_WritePins(GPIOD, pin, pin);
     }
 }
 
@@ -37,7 +38,7 @@ void turn_off_light(Lights color)
 
     if (pin != 0U)
     {
-        HAL_GPIO_WritePin(GPIOD, pin, GPIO_PIN_RESET);
+        My_GPIO_WritePins(GPIOD, pin, 0U);
     }
 }
 
@@ -47,7 +48,7 @@ int check_button(uint32_t now)
     static int stable_state = 0;
     static uint32_t changed_at = 0U;
 
-    int raw = (HAL_GPIO_ReadPin(GPIOC, GPIO_PIN_15) == GPIO_PIN_RESET);
+    int raw = (My_GPIO_ReadPin(GPIOC, GPIO_PIN_15) == GPIO_PIN_RESET);
 
     if (raw != last_raw)
     {
