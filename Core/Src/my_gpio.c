@@ -3,55 +3,99 @@
 void My_GPIO_Init(GPIO_TypeDef *GPIOx, const My_GPIO_InitTypeDef *InitStr)
 {
   uint32_t pins = (uint32_t)InitStr->PinMask;
-
-  if ((InitStr->Mode & 3U) == 1U)
-  {
-    if (InitStr->InitialState != 0U)
-    {
-      GPIOx->BSRR = pins;
-    }
-    else
-    {
-      GPIOx->BSRR = pins << 16U;
-    }
-  }
+  uint32_t new_mode = InitStr->Mode & 3U;
+  uint32_t new_type = InitStr->OType & 1U;
 
   for (int pin = 0; pin < 16; pin++)
   {
     if (pins & (1U << pin))
     {
+      uint32_t bit = 1U << pin;
+      uint32_t shift = (uint32_t)pin * 2U;
+      uint32_t field_mask = 3U << shift;
+      uint32_t old_mode = (GPIOx->MODER >> shift) & 3U;
+      uint32_t pull = (InitStr->Pull & 3U) << shift;
+      uint32_t speed = (InitStr->Speed & 3U) << shift;
 
-      GPIOx->OTYPER =
-          (GPIOx->OTYPER & ~(1U << pin)) | ((InitStr->OType & 1U) << pin);
-
-      GPIOx->OSPEEDR = (GPIOx->OSPEEDR & ~(3U << (pin * 2))) |
-                       ((InitStr->Speed & 3U) << (pin * 2));
-
-      GPIOx->PUPDR = (GPIOx->PUPDR & ~(3U << (pin * 2))) |
-                     ((InitStr->Pull & 3U) << (pin * 2));
-
-      if ((InitStr->Mode & 3U) == 2U)
+      if (old_mode == 1U && new_mode == 1U)
       {
-        if (pin < 8)
+        /* Не отключаем уже работающий GPIO-выход. */
+        if (InitStr->InitialState == 0U)
         {
-          GPIOx->AFR[0] = (GPIOx->AFR[0] & ~(0xFU << (pin * 4))) |
-                          ((InitStr->Alternate & 0xFU) << (pin * 4));
+          /* Ноль активно удерживается и push-pull, и open-drain. */
+          GPIOx->BSRR = bit << 16U;
         }
-        else
+        else if (new_type == 0U)
         {
-          GPIOx->AFR[1] = (GPIOx->AFR[1] & ~(0xFU << ((pin - 8) * 4))) |
-                          ((InitStr->Alternate & 0xFU) << ((pin - 8) * 4));
+          /* Включаем push-pull до установки конечной единицы. */
+          GPIOx->OTYPER = GPIOx->OTYPER & ~bit;
         }
-      }
-    }
-  }
 
-  for (int pin = 0; pin < 16; pin++)
-  {
-    if (pins & (1U << pin))
-    {
-      GPIOx->MODER = (GPIOx->MODER & ~(3U << (pin * 2))) |
-                     ((InitStr->Mode & 3U) << (pin * 2));
+        /* Настраиваем подтяжку до возможного отпускания open-drain. */
+        GPIOx->PUPDR = (GPIOx->PUPDR & ~field_mask) | pull;
+        GPIOx->OSPEEDR = (GPIOx->OSPEEDR & ~field_mask) | speed;
+        GPIOx->OTYPER = (GPIOx->OTYPER & ~bit) | (new_type << pin);
+
+        if (InitStr->InitialState != 0U)
+        {
+          GPIOx->BSRR = bit;
+        }
+        continue;
+      }
+
+      if (new_mode == 0U)
+      {
+        /* Подтяжка готова до отключения старого выходного каскада. */
+        GPIOx->PUPDR = (GPIOx->PUPDR & ~field_mask) | pull;
+        GPIOx->MODER = GPIOx->MODER & ~field_mask;
+      }
+      else if (new_mode == 3U)
+      {
+        /* Аналоговый режим отключает выходной каскад и подтяжки. */
+        GPIOx->MODER = (GPIOx->MODER & ~field_mask) | (3U << shift);
+      }
+      else if (old_mode == 2U || new_mode == 2U)
+      {
+        /* Отключаем AF перед изменением мультиплексора и типа выхода. */
+        GPIOx->MODER = GPIOx->MODER & ~field_mask;
+      }
+
+      GPIOx->OTYPER = (GPIOx->OTYPER & ~bit) | (new_type << pin);
+      GPIOx->OSPEEDR = (GPIOx->OSPEEDR & ~field_mask) | speed;
+
+      if (new_mode == 1U)
+      {
+        /* Предзагрузка ODR, пока GPIO-выход ещё отключён. */
+        GPIOx->BSRR = InitStr->InitialState != 0U ? bit : bit << 16U;
+
+        if (new_type == 1U && InitStr->InitialState != 0U)
+        {
+          /* Отпущенному open-drain нужна конечная подтяжка сразу. */
+          GPIOx->PUPDR = (GPIOx->PUPDR & ~field_mask) | pull;
+        }
+
+        GPIOx->MODER = (GPIOx->MODER & ~field_mask) | (1U << shift);
+
+        /* Для PP и OD с нулём применяем подтяжку после включения выхода. */
+        GPIOx->PUPDR = (GPIOx->PUPDR & ~field_mask) | pull;
+      }
+      else if (new_mode == 2U)
+      {
+        uint32_t af_index = (uint32_t)pin / 8U;
+        uint32_t af_shift = ((uint32_t)pin % 8U) * 4U;
+
+        GPIOx->AFR[af_index] =
+            (GPIOx->AFR[af_index] & ~(0xFU << af_shift)) |
+            ((InitStr->Alternate & 0xFU) << af_shift);
+        GPIOx->PUPDR = (GPIOx->PUPDR & ~field_mask) | pull;
+
+        /* Периферия должна быть подготовлена вызывающим кодом. */
+        GPIOx->MODER = (GPIOx->MODER & ~field_mask) | (2U << shift);
+      }
+      else if (new_mode == 3U)
+      {
+        GPIOx->PUPDR = (GPIOx->PUPDR & ~field_mask) | pull;
+      }
     }
   }
 }
