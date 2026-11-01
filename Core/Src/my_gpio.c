@@ -19,19 +19,15 @@ void My_GPIO_Init(GPIO_TypeDef *GPIOx, const My_GPIO_InitTypeDef *InitStr)
 
       if (old_mode == 1U && new_mode == 1U)
       {
-        /* Не отключаем уже работающий GPIO-выход. */
         if (InitStr->InitialState == 0U)
         {
-          /* Ноль активно удерживается и push-pull, и open-drain. */
           GPIOx->BSRR = bit << 16U;
         }
         else if (new_type == 0U)
         {
-          /* Включаем push-pull до установки конечной единицы. */
           GPIOx->OTYPER = GPIOx->OTYPER & ~bit;
         }
 
-        /* Настраиваем подтяжку до возможного отпускания open-drain. */
         GPIOx->PUPDR = (GPIOx->PUPDR & ~field_mask) | pull;
         GPIOx->OSPEEDR = (GPIOx->OSPEEDR & ~field_mask) | speed;
         GPIOx->OTYPER = (GPIOx->OTYPER & ~bit) | (new_type << pin);
@@ -45,18 +41,15 @@ void My_GPIO_Init(GPIO_TypeDef *GPIOx, const My_GPIO_InitTypeDef *InitStr)
 
       if (new_mode == 0U)
       {
-        /* Подтяжка готова до отключения старого выходного каскада. */
         GPIOx->PUPDR = (GPIOx->PUPDR & ~field_mask) | pull;
         GPIOx->MODER = GPIOx->MODER & ~field_mask;
       }
       else if (new_mode == 3U)
       {
-        /* Аналоговый режим отключает выходной каскад и подтяжки. */
         GPIOx->MODER = (GPIOx->MODER & ~field_mask) | (3U << shift);
       }
       else if (old_mode == 2U || new_mode == 2U)
       {
-        /* Отключаем AF перед изменением мультиплексора и типа выхода. */
         GPIOx->MODER = GPIOx->MODER & ~field_mask;
       }
 
@@ -65,18 +58,15 @@ void My_GPIO_Init(GPIO_TypeDef *GPIOx, const My_GPIO_InitTypeDef *InitStr)
 
       if (new_mode == 1U)
       {
-        /* Предзагрузка ODR, пока GPIO-выход ещё отключён. */
         GPIOx->BSRR = InitStr->InitialState != 0U ? bit : bit << 16U;
 
         if (new_type == 1U && InitStr->InitialState != 0U)
         {
-          /* Отпущенному open-drain нужна конечная подтяжка сразу. */
           GPIOx->PUPDR = (GPIOx->PUPDR & ~field_mask) | pull;
         }
 
         GPIOx->MODER = (GPIOx->MODER & ~field_mask) | (1U << shift);
 
-        /* Для PP и OD с нулём применяем подтяжку после включения выхода. */
         GPIOx->PUPDR = (GPIOx->PUPDR & ~field_mask) | pull;
       }
       else if (new_mode == 2U)
@@ -89,7 +79,6 @@ void My_GPIO_Init(GPIO_TypeDef *GPIOx, const My_GPIO_InitTypeDef *InitStr)
             ((InitStr->Alternate & 0xFU) << af_shift);
         GPIOx->PUPDR = (GPIOx->PUPDR & ~field_mask) | pull;
 
-        /* Периферия должна быть подготовлена вызывающим кодом. */
         GPIOx->MODER = (GPIOx->MODER & ~field_mask) | (2U << shift);
       }
       else if (new_mode == 3U)

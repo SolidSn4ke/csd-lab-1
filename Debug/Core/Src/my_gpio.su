@@ -1,5 +1,5 @@
 ../Core/Src/my_gpio.c:3:6:My_GPIO_Init	64	static
-../Core/Src/my_gpio.c:103:6:My_GPIO_GetConfig	24	static
-../Core/Src/my_gpio.c:121:10:My_GPIO_ReadPort	16	static
-../Core/Src/my_gpio.c:126:10:My_GPIO_ReadPin	16	static
-../Core/Src/my_gpio.c:131:6:My_GPIO_WritePins	24	static
+../Core/Src/my_gpio.c:92:6:My_GPIO_GetConfig	24	static
+../Core/Src/my_gpio.c:110:10:My_GPIO_ReadPort	16	static
+../Core/Src/my_gpio.c:115:10:My_GPIO_ReadPin	16	static
+../Core/Src/my_gpio.c:120:6:My_GPIO_WritePins	24	static

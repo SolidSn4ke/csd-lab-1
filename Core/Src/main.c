@@ -18,7 +18,9 @@
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
+#include "usart.h"
 #include "gpio.h"
+#include <string.h>
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
@@ -92,7 +94,6 @@ static void traffic_enter(TrafficState next, uint32_t now)
   case STATE_RED:
     red_duration = green_requested ? SHORT_RED_MS : RED_MS;
 
-    /* Запрос действует только на этот красный. */
     green_requested = 0;
     turn_on_light(RED);
     break;
@@ -124,10 +125,6 @@ static void traffic_update(uint32_t now, int press_event)
       if (elapsed < red_duration &&
           red_duration - elapsed > SHORT_RED_MS)
       {
-        /*
-         * Оставляем 3 секунды от момента нажатия.
-         * Повторное нажатие не продлевает красный.
-         */
         red_duration = elapsed + SHORT_RED_MS;
       }
     }
@@ -203,30 +200,66 @@ int main(void)
 
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
+  MX_USART6_UART_Init();
   /* USER CODE BEGIN 2 */
   traffic_enter(STATE_RED, HAL_GetTick());
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
+  char rx_buffer[128] = {0}; // Буфер для приема строки
+  uint16_t rx_index = 0;     // Индекс для записи в буфер
   while (1)
   {
-    uint32_t now = HAL_GetTick();
+    char received_char;
 
-    int button = check_button(now);
-    int press_event = button && !previous_button;
+    // 1. Ждем прихода одного символа с таймаутом 100 мс.
+    //    Обратите внимание на &received_char - передаем АДРЕС переменной.
+    if (HAL_UART_Receive(&huart6, (uint8_t *)&received_char, 1, 100) == HAL_OK)
+    {
+      // 2. Проверяем, не является ли символ концом строки (Enter).
+      //    Терминалы могут отправлять '\r' (CR), '\n' (LF) или оба символа.
+      if (received_char == '\n' || received_char == '\r')
+      {
+        // 3. Если буфер не пуст, завершаем строку и обрабатываем ее.
+        if (rx_index > 0)
+        {
+          rx_buffer[rx_index] = '\0'; // Устанавливаем нуль-терминатор
 
-    previous_button = button;
+          // --- Отправка полученной строки обратно ---
+          // Используем strlen() для отправки ТОЛЬКО длины строки!
+          HAL_UART_Transmit(&huart6, (uint8_t *)rx_buffer, strlen(rx_buffer), 100);
 
-    traffic_update(now, press_event);
+          // Дополнительно отправляем символ новой строки для читаемости
+          HAL_UART_Transmit(&huart6, (uint8_t *)"\r\n", 2, 100);
 
-    /* USER CODE END WHILE */
+          // 4. Очищаем буфер и сбрасываем индекс для приема новой строки.
+          memset(rx_buffer, 0, sizeof(rx_buffer));
+          rx_index = 0;
+        }
+      }
+      // 5. Если это обычный символ и в буфере есть место, добавляем его.
+      else if (rx_index < sizeof(rx_buffer) - 1)
+      {
+        rx_buffer[rx_index] = received_char;
+        rx_index++;
+      }
+      uint32_t now = HAL_GetTick();
 
-    /* USER CODE BEGIN 3 */
+      int button = check_button(now);
+      int press_event = button && !previous_button;
+
+      previous_button = button;
+
+      traffic_update(now, press_event);
+
+      /* USER CODE END WHILE */
+
+      /* USER CODE BEGIN 3 */
+    }
+    /* USER CODE END 3 */
   }
-  /* USER CODE END 3 */
 }
-
 /**
  * @brief System Clock Configuration
  * @retval None

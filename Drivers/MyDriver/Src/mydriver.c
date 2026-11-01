@@ -1,6 +1,7 @@
 #include "../Inc/mydriver.h"
 #include "gpio.h"
 #include "my_gpio.h"
+#include <usart.h>
 
 #define BUTTON_DEBOUNCE_MS 30U
 
@@ -62,4 +63,24 @@ int check_button(uint32_t now)
     }
 
     return stable_state;
+}
+
+HAL_StatusTypeDef recieve_char(Modes mode, char *recieved_char)
+{
+    if (recieved_char == NULL)
+    {
+        return HAL_ERROR;
+    }
+
+    switch (mode)
+    {
+    case INTR:
+        return HAL_ERROR;
+
+    case POLL:
+        return HAL_UART_Receive(&huart6, (uint8_t *)recieved_char, 1, 100);
+
+    default:
+        return HAL_ERROR;
+    }
 }
