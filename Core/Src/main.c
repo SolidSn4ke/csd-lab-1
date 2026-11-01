@@ -202,17 +202,21 @@ int main(void)
   MX_GPIO_Init();
   MX_USART6_UART_Init();
   /* USER CODE BEGIN 2 */
+  Modes uart_mode = POLL;
+  if (uart_receive_init(uart_mode) != HAL_OK)
+    Error_Handler();
+
   traffic_enter(STATE_RED, HAL_GetTick());
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
-  char rx_buffer[128] = {0}; // Буфер для приема строки
-  LineReceiver receiver = {0}; // Индекс для записи в буфер
+  char rx_buffer[128] = {0};
+  LineReceiver receiver = {0};
   while (1)
   {
     LineStatus status =
-        receive_str(POLL, &receiver, rx_buffer, sizeof(rx_buffer));
+        receive_str(uart_mode, &receiver, rx_buffer, sizeof(rx_buffer));
 
     if (status == LINE_READY)
     {

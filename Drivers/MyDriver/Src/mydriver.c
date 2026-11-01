@@ -2,6 +2,7 @@
 #include "gpio.h"
 #include "my_gpio.h"
 #include <usart.h>
+#include "../Inc/byte_queue.h"
 
 #define BUTTON_DEBOUNCE_MS 30U
 
@@ -65,6 +66,94 @@ int check_button(uint32_t now)
     return stable_state;
 }
 
+static uint8_t rx_storage[UART_RX_QUEUE_SIZE];
+static ByteQueue rx_queue = {rx_storage, sizeof(rx_storage), 0, 0};
+static uint8_t rx_byte;
+static volatile Modes rx_mode = POLL;
+static volatile int rx_initialized;
+static volatile int rx_fault;
+static volatile int rx_restart_needed;
+
+/* Called with interrupts masked, or from the USART6 handler. */
+static HAL_StatusTypeDef rx_start(void)
+{
+    HAL_StatusTypeDef status = HAL_UART_Receive_IT(&huart6, &rx_byte, 1);
+    rx_restart_needed = (status != HAL_OK);
+    if (status != HAL_OK)
+        rx_fault = 1;
+    return status;
+}
+
+HAL_StatusTypeDef uart_receive_init(Modes mode)
+{
+    if (mode != INTR && mode != POLL)
+        return HAL_ERROR;
+
+    uint32_t primask = __get_PRIMASK();
+    __disable_irq();
+
+    if (huart6.gState != HAL_UART_STATE_READY)
+    {
+        __set_PRIMASK(primask);
+        return HAL_BUSY;
+    }
+
+    HAL_NVIC_DisableIRQ(USART6_IRQn);
+    HAL_StatusTypeDef status = HAL_UART_AbortReceive(&huart6);
+    rx_initialized = 0;
+
+    if (status == HAL_OK)
+    {
+        /* SR/DR read clears pending data and receive error flags. */
+        __HAL_UART_CLEAR_OREFLAG(&huart6);
+        HAL_NVIC_ClearPendingIRQ(USART6_IRQn);
+        byte_queue_clear(&rx_queue);
+        rx_fault = 0;
+        rx_restart_needed = 0;
+        rx_mode = mode;
+
+        if (mode == INTR)
+            status = rx_start();
+
+        if (status == HAL_OK)
+        {
+            rx_initialized = 1;
+            if (mode == INTR)
+                HAL_NVIC_EnableIRQ(USART6_IRQn);
+        }
+    }
+
+    __set_PRIMASK(primask);
+    return status;
+}
+
+void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
+{
+    if (huart != &huart6 || !rx_initialized || rx_mode != INTR)
+        return;
+
+    /* Ignore bytes after a detected loss until main acknowledges the fault. */
+    if (!rx_fault && !byte_queue_push(&rx_queue, rx_byte))
+        rx_fault = 1;
+
+    (void)rx_start();
+}
+
+void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart)
+{
+    if (huart != &huart6 || !rx_initialized || rx_mode != INTR)
+        return;
+
+    rx_fault = 1;
+    rx_restart_needed = 1;
+    /* HAL can stop reception on ORE. Abort also handles recoverable errors. */
+    if (HAL_UART_AbortReceive(huart) == HAL_OK)
+    {
+        __HAL_UART_CLEAR_OREFLAG(huart);
+        (void)rx_start();
+    }
+}
+
 HAL_StatusTypeDef receive_char(Modes mode, char *recieved_char)
 {
     if (recieved_char == NULL)
@@ -72,10 +161,43 @@ HAL_StatusTypeDef receive_char(Modes mode, char *recieved_char)
         return HAL_ERROR;
     }
 
+    if (!rx_initialized || mode != rx_mode)
+        return HAL_ERROR;
+
     switch (mode)
     {
     case INTR:
-        return HAL_ERROR;
+    {
+        uint32_t primask = __get_PRIMASK();
+        __disable_irq();
+
+        if (rx_restart_needed)
+        {
+            if (HAL_UART_AbortReceive(&huart6) == HAL_OK)
+            {
+                __HAL_UART_CLEAR_OREFLAG(&huart6);
+                (void)rx_start();
+            }
+        }
+
+        HAL_StatusTypeDef status;
+        if (rx_fault)
+        {
+            byte_queue_clear(&rx_queue);
+            rx_fault = 0;
+            status = HAL_ERROR;
+        }
+        else
+        {
+            uint8_t byte;
+            status = byte_queue_pop(&rx_queue, &byte) ? HAL_OK : HAL_BUSY;
+            if (status == HAL_OK)
+                *recieved_char = (char)byte;
+        }
+
+        __set_PRIMASK(primask);
+        return status;
+    }
 
     case POLL:
         return HAL_UART_Receive(&huart6, (uint8_t *)recieved_char, 1, 0);
@@ -97,7 +219,13 @@ LineStatus receive_str(Modes mode, LineReceiver *rx, char *buf, size_t size)
         return LINE_PENDING;
 
     if (status != HAL_OK)
+    {
+        /* A lost byte must not turn a damaged line into a valid command. */
+        rx->index = 0;
+        rx->overflow = 1;
+        buf[0] = '\0';
         return LINE_ERROR;
+    }
 
     if (ch == '\r' || ch == '\n')
     {
