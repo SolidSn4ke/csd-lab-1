@@ -27,6 +27,14 @@ typedef enum
 #define UART_RX_QUEUE_SIZE 256U
 #endif
 
+#ifndef UART_TX_QUEUE_SIZE
+#define UART_TX_QUEUE_SIZE 256U
+#endif
+
+#if UART_TX_QUEUE_SIZE < 2
+#error "UART_TX_QUEUE_SIZE must be at least 2"
+#endif
+
 #if UART_RX_QUEUE_SIZE < 2
 #error "UART_RX_QUEUE_SIZE must be at least 2"
 #endif
@@ -54,7 +62,14 @@ typedef enum
 } LineStatus;
 
 LineStatus receive_str(Modes mode, LineReceiver *rx, char *buf, size_t size);
-HAL_StatusTypeDef transmit_char(Modes mode);
-HAL_StatusTypeDef transmit_str(Modes mode, char *ptr, size_t size);
+/* INTR copies the complete message into the queue, or returns HAL_BUSY without
+ * accepting any bytes. Capacity is UART_TX_QUEUE_SIZE - 1, including in-flight
+ * data. HAL_OK means accepted, not physically transmitted. POLL waits for TX.
+ * mode must match uart_receive_init. Call these functions from main only.
+ */
+HAL_StatusTypeDef transmit_char(Modes mode, char ch);
+HAL_StatusTypeDef transmit_str(Modes mode, const char *ptr, size_t size);
+/* Call regularly from main to retry a failed HAL start. Does not wait for TX. */
+HAL_StatusTypeDef uart_transmit_init(void);
 
 #endif

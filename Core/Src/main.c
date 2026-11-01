@@ -215,6 +215,9 @@ int main(void)
   LineReceiver receiver = {0};
   while (1)
   {
+    /* Retry queued TX if HAL could not start it in the callback. */
+    (void)uart_transmit_init();
+
     LineStatus status =
         receive_str(uart_mode, &receiver, rx_buffer, sizeof(rx_buffer));
 
