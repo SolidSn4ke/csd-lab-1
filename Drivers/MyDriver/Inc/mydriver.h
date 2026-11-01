@@ -40,7 +40,7 @@ typedef enum
 #endif
 
 /* Call after MX_USART6_UART_Init, from main only. No DMA is used.
- * Reinitialization discards queued bytes: also reset the caller's LineReceiver.
+ * Mode changes preserve queued RX bytes and the caller's LineReceiver.
  * Do not call while a UART transmission is active.
  */
 HAL_StatusTypeDef uart_receive_init(Modes mode);
@@ -62,6 +62,8 @@ typedef enum
 } LineStatus;
 
 LineStatus receive_str(Modes mode, LineReceiver *rx, char *buf, size_t size);
+/* Feed an already received byte (for callers implementing echo). */
+LineStatus receive_line_char(LineReceiver *rx, char *buf, size_t size, char ch);
 /* INTR copies the complete message into the queue, or returns HAL_BUSY without
  * accepting any bytes. Capacity is UART_TX_QUEUE_SIZE - 1, including in-flight
  * data. HAL_OK means accepted, not physically transmitted. POLL waits for TX.

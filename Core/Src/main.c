@@ -25,6 +25,7 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "../../Drivers/MyDriver/Inc/mydriver.h"
+#include <stdio.h>
 
 /* USER CODE END Includes */
 
@@ -76,6 +77,8 @@ typedef enum
 static TrafficState traffic_state;
 static uint32_t state_started;
 static uint32_t red_duration;
+static uint32_t configured_red_ms = RED_MS;
+static int button_enabled = 1;
 
 static int green_requested = 0;
 static int previous_button = 0;
@@ -92,7 +95,9 @@ static void traffic_enter(TrafficState next, uint32_t now)
   switch (next)
   {
   case STATE_RED:
-    red_duration = green_requested ? SHORT_RED_MS : RED_MS;
+    red_duration = (green_requested && configured_red_ms > SHORT_RED_MS)
+                       ? SHORT_RED_MS
+                       : configured_red_ms;
 
     green_requested = 0;
     turn_on_light(RED);
@@ -113,7 +118,7 @@ static void traffic_update(uint32_t now, int press_event)
 {
   uint32_t elapsed = (uint32_t)(now - state_started);
 
-  if (press_event)
+  if (button_enabled && press_event)
   {
     if (traffic_state == STATE_GREEN_BLINK ||
         traffic_state == STATE_YELLOW)
@@ -170,6 +175,156 @@ static void traffic_update(uint32_t now, int press_event)
   }
 }
 
+/* Replies remain here until the driver accepts them; HAL_BUSY loses no text. */
+static Modes uart_mode = POLL;
+static Modes requested_uart_mode = POLL;
+static int uart_mode_pending;
+static char command_buffer[128];
+static LineReceiver command_receiver;
+static char console_output[192];
+static size_t console_output_pos;
+static size_t console_output_size;
+
+static const char *traffic_state_name(void)
+{
+  switch (traffic_state)
+  {
+  case STATE_RED:
+    return "red";
+  case STATE_YELLOW:
+    return "yellow";
+  case STATE_GREEN:
+    return "green";
+  case STATE_GREEN_BLINK:
+    return "blinking green";
+  default:
+    return "unknown";
+  }
+}
+
+static int parse_timeout(const char *text, uint32_t *seconds)
+{
+  uint32_t value = 0;
+  const uint32_t limit = UINT32_MAX / 1000U;
+  if (*text == '\0')
+    return 0;
+
+  for (; *text != '\0'; ++text)
+  {
+    if (*text < '0' || *text > '9')
+      return 0;
+    uint32_t digit = (uint32_t)(*text - '0');
+    if (value > (limit - digit) / 10U)
+      return 0;
+    value = value * 10U + digit;
+  }
+  if (value == 0)
+    return 0;
+  *seconds = value;
+  return 1;
+}
+
+static void command_reply(const char *command, char *reply, size_t size)
+{
+  const char *message = "ERROR: unknown command";
+
+  if (strcmp(command, "?") == 0)
+  {
+    (void)snprintf(reply, size, "\r\n%s, mode %u, timeout %lu, %c\r\n",
+                   traffic_state_name(), button_enabled ? 1U : 2U,
+                   (unsigned long)(configured_red_ms / 1000U),
+                   uart_mode == INTR ? 'I' : 'P');
+    return;
+  }
+  if (strcmp(command, "set mode 1") == 0)
+  {
+    button_enabled = 1;
+    message = "OK";
+  }
+  else if (strcmp(command, "set mode 2") == 0)
+  {
+    button_enabled = 0;
+    green_requested = 0;
+    message = "OK";
+  }
+  else if (strncmp(command, "set timeout ", 12) == 0)
+  {
+    uint32_t seconds;
+    if (parse_timeout(command + 12, &seconds))
+    {
+      configured_red_ms = seconds * 1000U;
+      message = "OK";
+    }
+    else
+      message = "ERROR: timeout must be 1..4294967 seconds";
+  }
+  else if (strcmp(command, "set interrupts on") == 0 ||
+           strcmp(command, "set interrupts off") == 0)
+  {
+    requested_uart_mode = strcmp(command, "set interrupts on") == 0 ? INTR : POLL;
+    uart_mode_pending = (requested_uart_mode != uart_mode);
+    message = "OK";
+  }
+  (void)snprintf(reply, size, "\r\n%s\r\n", message);
+}
+
+static void console_update(void)
+{
+  uart_transmit_init();
+
+  if (console_output_pos < console_output_size)
+  {
+    if (transmit_char(uart_mode, console_output[console_output_pos]) == HAL_OK)
+      ++console_output_pos;
+    return;
+  }
+
+  if (uart_mode_pending)
+  {
+    HAL_StatusTypeDef status = uart_receive_init(requested_uart_mode);
+    if (status == HAL_OK)
+    {
+      uart_mode = requested_uart_mode;
+      uart_mode_pending = 0;
+    }
+    else if (status != HAL_BUSY)
+      Error_Handler();
+    return;
+  }
+
+  char ch;
+  HAL_StatusTypeDef status = receive_char(uart_mode, &ch);
+  if (status == HAL_BUSY || status == HAL_TIMEOUT)
+    return;
+
+  console_output_pos = 0;
+  if (status != HAL_OK)
+  {
+    command_receiver.index = 0;
+    command_receiver.overflow = 1;
+    command_buffer[0] = '\0';
+    (void)snprintf(console_output, sizeof(console_output),
+                   "\r\nERROR: UART receive error\r\n");
+  }
+  else
+  {
+    /* Echo every received byte, including line terminators. */
+    console_output[0] = ch;
+    console_output[1] = '\0';
+    LineStatus line = receive_line_char(&command_receiver, command_buffer,
+                                        sizeof(command_buffer), ch);
+    if (line == LINE_READY)
+      command_reply(command_buffer, console_output + 1, sizeof(console_output) - 1);
+    else if (line == LINE_OVERFLOW)
+      (void)snprintf(console_output + 1, sizeof(console_output) - 1,
+                     "\r\nERROR: line too long or damaged\r\n");
+    /* The echo may be NUL, so do not use strlen on its first byte. */
+    console_output_size = 1U + strlen(console_output + 1);
+    return;
+  }
+  console_output_size = strlen(console_output);
+}
+
 /* USER CODE END 0 */
 
 /**
@@ -202,7 +357,6 @@ int main(void)
   MX_GPIO_Init();
   MX_USART6_UART_Init();
   /* USER CODE BEGIN 2 */
-  Modes uart_mode = POLL;
   if (uart_receive_init(uart_mode) != HAL_OK)
     Error_Handler();
 
@@ -211,24 +365,9 @@ int main(void)
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
-  char rx_buffer[128] = {0};
-  LineReceiver receiver = {0};
   while (1)
   {
-    /* Retry queued TX if HAL could not start it in the callback. */
-    (void)uart_transmit_init();
-
-    LineStatus status =
-        receive_str(uart_mode, &receiver, rx_buffer, sizeof(rx_buffer));
-
-    if (status == LINE_READY)
-    {
-      /* Process rx_buffer here before the next receive_str call. */
-    }
-    else if (status == LINE_OVERFLOW)
-    {
-      /* The oversized line was discarded; ready for the next line. */
-    }
+    console_update();
 
     uint32_t now = HAL_GetTick();
 

@@ -146,15 +146,31 @@ HAL_StatusTypeDef uart_receive_init(Modes mode)
 
     HAL_NVIC_DisableIRQ(USART6_IRQn);
     HAL_StatusTypeDef status = HAL_UART_AbortReceive(&huart6);
+    int was_initialized = rx_initialized;
     rx_initialized = 0;
 
     if (status == HAL_OK)
     {
-        /* SR/DR read clears pending data and receive error flags. */
-        __HAL_UART_CLEAR_OREFLAG(&huart6);
+        if (!was_initialized)
+        {
+            __HAL_UART_CLEAR_OREFLAG(&huart6);
+            byte_queue_clear(&rx_queue);
+            rx_fault = 0;
+        }
+        else if (__HAL_UART_GET_FLAG(&huart6, UART_FLAG_ORE))
+        {
+            __HAL_UART_CLEAR_OREFLAG(&huart6);
+            rx_fault = 1;
+        }
+        else if (__HAL_UART_GET_FLAG(&huart6, UART_FLAG_RXNE))
+        {
+            /* Preserve a byte received just before the mode change. */
+            uint8_t byte;
+            if (HAL_UART_Receive(&huart6, &byte, 1, 0) != HAL_OK ||
+                !byte_queue_push(&rx_queue, byte))
+                rx_fault = 1;
+        }
         HAL_NVIC_ClearPendingIRQ(USART6_IRQn);
-        byte_queue_clear(&rx_queue);
-        rx_fault = 0;
         rx_restart_needed = 0;
         rx_mode = mode;
 
@@ -210,47 +226,37 @@ HAL_StatusTypeDef receive_char(Modes mode, char *recieved_char)
     if (!rx_initialized || mode != rx_mode)
         return HAL_ERROR;
 
-    switch (mode)
+    uint32_t primask = __get_PRIMASK();
+    __disable_irq();
+
+    if (mode == INTR && rx_restart_needed)
     {
-    case INTR:
-    {
-        uint32_t primask = __get_PRIMASK();
-        __disable_irq();
-
-        if (rx_restart_needed)
+        if (HAL_UART_AbortReceive(&huart6) == HAL_OK)
         {
-            if (HAL_UART_AbortReceive(&huart6) == HAL_OK)
-            {
-                __HAL_UART_CLEAR_OREFLAG(&huart6);
-                (void)rx_start();
-            }
+            __HAL_UART_CLEAR_OREFLAG(&huart6);
+            (void)rx_start();
         }
-
-        HAL_StatusTypeDef status;
-        if (rx_fault)
-        {
-            byte_queue_clear(&rx_queue);
-            rx_fault = 0;
-            status = HAL_ERROR;
-        }
-        else
-        {
-            uint8_t byte;
-            status = byte_queue_pop(&rx_queue, &byte) ? HAL_OK : HAL_BUSY;
-            if (status == HAL_OK)
-                *recieved_char = (char)byte;
-        }
-
-        __set_PRIMASK(primask);
-        return status;
     }
 
-    case POLL:
+    HAL_StatusTypeDef status;
+    uint8_t byte;
+    if (rx_fault)
+    {
+        byte_queue_clear(&rx_queue);
+        rx_fault = 0;
+        status = HAL_ERROR;
+    }
+    else
+    {
+        status = byte_queue_pop(&rx_queue, &byte) ? HAL_OK : HAL_BUSY;
+        if (status == HAL_OK)
+            *recieved_char = (char)byte;
+    }
+    __set_PRIMASK(primask);
+
+    if (mode == POLL && status == HAL_BUSY)
         return HAL_UART_Receive(&huart6, (uint8_t *)recieved_char, 1, 0);
-
-    default:
-        return HAL_ERROR;
-    }
+    return status;
 }
 
 LineStatus receive_str(Modes mode, LineReceiver *rx, char *buf, size_t size)
@@ -271,6 +277,20 @@ LineStatus receive_str(Modes mode, LineReceiver *rx, char *buf, size_t size)
         rx->overflow = 1;
         buf[0] = '\0';
         return LINE_ERROR;
+    }
+
+    return receive_line_char(rx, buf, size, ch);
+}
+
+LineStatus receive_line_char(LineReceiver *rx, char *buf, size_t size, char ch)
+{
+    if (rx == NULL || buf == NULL || size == 0 || rx->index >= size)
+        return LINE_ERROR;
+
+    if (ch == '\0')
+    {
+        rx->overflow = 1;
+        return LINE_PENDING;
     }
 
     if (ch == '\r' || ch == '\n')
