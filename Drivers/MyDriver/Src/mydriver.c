@@ -65,7 +65,7 @@ int check_button(uint32_t now)
     return stable_state;
 }
 
-HAL_StatusTypeDef recieve_char(Modes mode, char *recieved_char)
+HAL_StatusTypeDef receive_char(Modes mode, char *recieved_char)
 {
     if (recieved_char == NULL)
     {
@@ -78,9 +78,55 @@ HAL_StatusTypeDef recieve_char(Modes mode, char *recieved_char)
         return HAL_ERROR;
 
     case POLL:
-        return HAL_UART_Receive(&huart6, (uint8_t *)recieved_char, 1, 100);
+        return HAL_UART_Receive(&huart6, (uint8_t *)recieved_char, 1, 0);
 
     default:
         return HAL_ERROR;
     }
+}
+
+LineStatus receive_str(Modes mode, LineReceiver *rx, char *buf, size_t size)
+{
+    if (rx == NULL || buf == NULL || size == 0 || rx->index >= size)
+        return LINE_ERROR;
+
+    char ch;
+    HAL_StatusTypeDef status = receive_char(mode, &ch);
+
+    if (status == HAL_TIMEOUT || status == HAL_BUSY)
+        return LINE_PENDING;
+
+    if (status != HAL_OK)
+        return LINE_ERROR;
+
+    if (ch == '\r' || ch == '\n')
+    {
+        if (rx->overflow)
+        {
+            rx->index = 0;
+            rx->overflow = 0;
+            buf[0] = '\0';
+            return LINE_OVERFLOW;
+        }
+
+        if (rx->index == 0)
+            return LINE_PENDING;
+
+        buf[rx->index] = '\0';
+        rx->index = 0;
+        return LINE_READY;
+    }
+
+    if (rx->overflow)
+        return LINE_PENDING;
+
+    if (rx->index >= size - 1)
+    {
+        rx->overflow = 1;
+        return LINE_PENDING;
+    }
+
+    buf[rx->index++] = ch;
+    buf[rx->index] = '\0';
+    return LINE_PENDING;
 }

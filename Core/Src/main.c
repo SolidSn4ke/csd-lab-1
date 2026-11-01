@@ -208,57 +208,34 @@ int main(void)
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   char rx_buffer[128] = {0}; // Буфер для приема строки
-  uint16_t rx_index = 0;     // Индекс для записи в буфер
+  LineReceiver receiver = {0}; // Индекс для записи в буфер
   while (1)
   {
-    char received_char;
+    LineStatus status =
+        receive_str(POLL, &receiver, rx_buffer, sizeof(rx_buffer));
 
-    // 1. Ждем прихода одного символа с таймаутом 100 мс.
-    //    Обратите внимание на &received_char - передаем АДРЕС переменной.
-    if (HAL_UART_Receive(&huart6, (uint8_t *)&received_char, 1, 100) == HAL_OK)
+    if (status == LINE_READY)
     {
-      // 2. Проверяем, не является ли символ концом строки (Enter).
-      //    Терминалы могут отправлять '\r' (CR), '\n' (LF) или оба символа.
-      if (received_char == '\n' || received_char == '\r')
-      {
-        // 3. Если буфер не пуст, завершаем строку и обрабатываем ее.
-        if (rx_index > 0)
-        {
-          rx_buffer[rx_index] = '\0'; // Устанавливаем нуль-терминатор
-
-          // --- Отправка полученной строки обратно ---
-          // Используем strlen() для отправки ТОЛЬКО длины строки!
-          HAL_UART_Transmit(&huart6, (uint8_t *)rx_buffer, strlen(rx_buffer), 100);
-
-          // Дополнительно отправляем символ новой строки для читаемости
-          HAL_UART_Transmit(&huart6, (uint8_t *)"\r\n", 2, 100);
-
-          // 4. Очищаем буфер и сбрасываем индекс для приема новой строки.
-          memset(rx_buffer, 0, sizeof(rx_buffer));
-          rx_index = 0;
-        }
-      }
-      // 5. Если это обычный символ и в буфере есть место, добавляем его.
-      else if (rx_index < sizeof(rx_buffer) - 1)
-      {
-        rx_buffer[rx_index] = received_char;
-        rx_index++;
-      }
-      uint32_t now = HAL_GetTick();
-
-      int button = check_button(now);
-      int press_event = button && !previous_button;
-
-      previous_button = button;
-
-      traffic_update(now, press_event);
-
-      /* USER CODE END WHILE */
-
-      /* USER CODE BEGIN 3 */
+      /* Process rx_buffer here before the next receive_str call. */
     }
-    /* USER CODE END 3 */
+    else if (status == LINE_OVERFLOW)
+    {
+      /* The oversized line was discarded; ready for the next line. */
+    }
+
+    uint32_t now = HAL_GetTick();
+
+    int button = check_button(now);
+    int press_event = button && !previous_button;
+
+    previous_button = button;
+
+    traffic_update(now, press_event);
+    /* USER CODE END WHILE */
+
+    /* USER CODE BEGIN 3 */
   }
+  /* USER CODE END 3 */
 }
 /**
  * @brief System Clock Configuration

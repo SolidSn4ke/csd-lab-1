@@ -23,9 +23,22 @@ typedef enum
     POLL
 } Modes;
 
-HAL_StatusTypeDef recieve_char(Modes mode, char *recieved_char);
-HAL_StatusTypeDef recieve_str(Modes mode, char *ptr, size_t size);
+HAL_StatusTypeDef receive_char(Modes mode, char *recieved_char);
+typedef struct
+{
+    size_t index;
+    int overflow;
+} LineReceiver;
 
+typedef enum
+{
+    LINE_PENDING,
+    LINE_READY,
+    LINE_OVERFLOW,
+    LINE_ERROR
+} LineStatus;
+
+LineStatus receive_str(Modes mode, LineReceiver *rx, char *buf, size_t size);
 HAL_StatusTypeDef transmit_char(Modes mode);
 HAL_StatusTypeDef transmit_str(Modes mode, char *ptr, size_t size);
 
